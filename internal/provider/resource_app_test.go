@@ -679,7 +679,130 @@ resource "dokku_app" "test" {
 	})
 }
 
-//
+func TestLetsEncryptDefault(t *testing.T) {
+	appName := fmt.Sprintf("test-letsencrypt-default-%s", acctest.RandString(10))
+
+	p := func(v bool) *bool { return &v }
+
+	resource.Test(t, resource.TestCase{
+		Providers:    testAccProviders,
+		CheckDestroy: testAccDokkuAppDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(false)),
+				),
+			},
+		},
+	})
+}
+
+func TestLetsEncryptEnabled(t *testing.T) {
+	appName := fmt.Sprintf("test-letsencrypt-enabled-%s", acctest.RandString(10))
+
+	p := func(v bool) *bool { return &v }
+
+	resource.Test(t, resource.TestCase{
+		Providers:    testAccProviders,
+		CheckDestroy: testAccDokkuAppDestroy,
+		Steps: []resource.TestStep{
+
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+	letsencrypt = true
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(true)),
+				),
+			},
+		},
+	})
+}
+
+func TestLetsEncryptDisabled(t *testing.T) {
+	appName := fmt.Sprintf("test-letsencrypt-disabled-%s", acctest.RandString(10))
+
+	p := func(v bool) *bool { return &v }
+
+	resource.Test(t, resource.TestCase{
+		Providers:    testAccProviders,
+		CheckDestroy: testAccDokkuAppDestroy,
+		Steps: []resource.TestStep{
+
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+	letsencrypt = false
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(false)),
+				),
+			},
+		},
+	})
+}
+
+func TestLetsEncryptUpdate(t *testing.T) {
+	appName := fmt.Sprintf("test-letsencrypt-update-%s", acctest.RandString(10))
+
+	p := func(v bool) *bool { return &v }
+
+	resource.Test(t, resource.TestCase{
+		Providers:    testAccProviders,
+		CheckDestroy: testAccDokkuAppDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(false)),
+				),
+			},
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+	letsencrypt = true
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(true)),
+				),
+			},
+			{
+				Config: fmt.Sprintf(`
+resource "dokku_app" "test" {
+	name = "%s"
+	letsencrypt = false
+}
+`, appName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDokkuAppExists("dokku_app.test"),
+					testAccCheckDokkuAppLetsEncryptState("dokku_app.test", p(false)),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckDokkuAppExists(n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -704,7 +827,6 @@ func testAccCheckDokkuAppExists(n string) resource.TestCheckFunc {
 	}
 }
 
-//
 func testAccCheckDokkuAppConfigVar(n string, varName string, varValue string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -906,7 +1028,34 @@ func testAccCheckDokkuAppPortsDontExist(n string, ports ...string) resource.Test
 	}
 }
 
-//
+func testAccCheckDokkuAppLetsEncryptState(n string, state *bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		sshClient := testAccProvider.Meta().(*goph.Client)
+
+		app, err := dokkuAppRetrieve(rs.Primary.ID, sshClient)
+
+		if err != nil {
+			return fmt.Errorf("Error retrieving app info")
+		}
+
+		log.Printf("[DEBUG] %v", app.LetsEncryptActive)
+
+		if app.LetsEncryptActive == nil && state == nil {
+			return nil
+		} else if app.LetsEncryptActive != nil && state != nil && *app.LetsEncryptActive == *state {
+			return nil
+		} else {
+			return fmt.Errorf("expected %v, found %v.", state, app.LetsEncryptActive)
+		}
+	}
+}
+
 func testAccCheckDokkuAppNginxIpv4Addr(n string, ip string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -931,7 +1080,6 @@ func testAccCheckDokkuAppNginxIpv4Addr(n string, ip string) resource.TestCheckFu
 	}
 }
 
-//
 func testAccCheckDokkuAppNginxIpv6Addr(n string, ip string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -956,7 +1104,6 @@ func testAccCheckDokkuAppNginxIpv6Addr(n string, ip string) resource.TestCheckFu
 	}
 }
 
-//
 func testAccDokkuAppDestroy(s *terraform.State) error {
 	sshClient := testAccProvider.Meta().(*goph.Client)
 

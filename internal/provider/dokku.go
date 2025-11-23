@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -11,7 +12,6 @@ import (
 	"al.essio.dev/pkg/shellescape"
 )
 
-//
 type DokkuApp struct {
 	Id         string
 	Name       string
@@ -23,9 +23,9 @@ type DokkuApp struct {
 	Ports                []string
 	NginxBindAddressIpv4 string
 	NginxBindAddressIpv6 string
+	LetsEncryptActive    *bool
 }
 
-//
 func (app *DokkuApp) setOnResourceData(d *schema.ResourceData) {
 	d.SetId(app.Id)
 	d.Set("name", app.Name)
@@ -117,6 +117,14 @@ func NewDokkuAppFromResourceData(d *schema.ResourceData) *DokkuApp {
 		configVars[ck] = cv.(string)
 	}
 
+	var letsEncryptActive *bool
+	if val, ok := d.GetOk("letsencrypt"); ok {
+		active := val.(bool)
+		letsEncryptActive = &active
+	} else {
+		letsEncryptActive = nil
+	}
+
 	return &DokkuApp{
 		Name:                 d.Get("name").(string),
 		Locked:               d.Get("locked").(bool),
@@ -126,10 +134,10 @@ func NewDokkuAppFromResourceData(d *schema.ResourceData) *DokkuApp {
 		Ports:                ports,
 		NginxBindAddressIpv4: d.Get("nginx_bind_address_ipv4").(string),
 		NginxBindAddressIpv6: d.Get("nginx_bind_address_ipv6").(string),
+		LetsEncryptActive:    letsEncryptActive,
 	}
 }
 
-//
 func dokkuAppRetrieve(appName string, client *goph.Client) (*DokkuApp, error) {
 	res := run(client, fmt.Sprintf("apps:exists %s", appName))
 
@@ -179,6 +187,12 @@ func dokkuAppRetrieve(appName string, client *goph.Client) (*DokkuApp, error) {
 	app.NginxBindAddressIpv4 = nginxReport.BindAddressIpv4
 	app.NginxBindAddressIpv6 = nginxReport.BindAddressIpv6
 
+	letsEncryptActive, err := readLetsEncryptActive(appName, client)
+	if err != nil {
+		return nil, err
+	}
+	app.LetsEncryptActive = letsEncryptActive
+
 	return app, nil
 }
 
@@ -217,7 +231,6 @@ func readAppConfig(appName string, sshClient *goph.Client) map[string]string {
 	return config
 }
 
-//
 func readAppDomains(appName string, client *goph.Client) ([]string, error) {
 	res := run(client, fmt.Sprintf("domains:report %s", appName))
 
@@ -303,12 +316,48 @@ func readAppPorts(appName string, client *goph.Client) ([]string, error) {
 	return portMapping, nil
 }
 
+func readLetsEncryptActive(appName string, client *goph.Client) (*bool, error) {
+	res := run(client, fmt.Sprintf("letsencrypt:active %s", appName))
+
+	//fmt.Printf("letsencrypt:active %s\n", appName)
+
+	lines := strings.Split(res.stdout, "\n")
+
+	// Handle case where plugin is not installed
+	// Output:
+	/*
+	 !     `letsencrypt:active app` is not a dokku command.
+	 !     See `dokku help` for a list of available commands.
+	*/
+	if res.status == 1 && len(lines) >= 1 && strings.Contains(lines[0], "is not a dokku command") {
+		return nil, nil
+	}
+
+	// Handle all other errors
+	if res.err != nil {
+		return nil, res.err
+	}
+
+	// Output:
+	/*
+		false
+	*/
+	/*
+		true
+	*/
+	active, err := strconv.ParseBool(lines[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return &active, nil
+}
+
 type DokkuAppNginxReport struct {
 	BindAddressIpv4 string
 	BindAddressIpv6 string
 }
 
-//
 func readAppNginxReport(appName string, client *goph.Client) (DokkuAppNginxReport, error) {
 	res := run(client, fmt.Sprintf("nginx:report %s", appName))
 
@@ -342,7 +391,6 @@ func readAppNginxReport(appName string, client *goph.Client) (DokkuAppNginxRepor
 	return report, nil
 }
 
-//
 func dokkuAppCreate(app *DokkuApp, client *goph.Client) error {
 	res := run(client, fmt.Sprintf("apps:create %s", app.Name))
 
@@ -384,10 +432,15 @@ func dokkuAppCreate(app *DokkuApp, client *goph.Client) error {
 
 	err = dokkuAppNginxOptSet(app.Name, "bind-address-ipv6", app.NginxBindAddressIpv6, client)
 
+	if err != nil {
+		return err
+	}
+
+	err = dokkuAppLetsEncryptSet(app.Name, app.LetsEncryptActive, client)
+
 	return err
 }
 
-//
 func dokkuAppConfigVarsSet(app *DokkuApp, client *goph.Client) error {
 	configVarStr := app.configVarsStr()
 	if len(configVarStr) == 0 {
@@ -403,7 +456,6 @@ func dokkuAppConfigVarsSet(app *DokkuApp, client *goph.Client) error {
 	return res.err
 }
 
-//
 func dokkuAppConfigVarsUnset(app *DokkuApp, varsToUnset []string, client *goph.Client) error {
 	if len(varsToUnset) == 0 {
 		return nil
@@ -416,7 +468,6 @@ func dokkuAppConfigVarsUnset(app *DokkuApp, varsToUnset []string, client *goph.C
 	return res.err
 }
 
-//
 func dokkuAppDomainsAdd(app *DokkuApp, client *goph.Client) error {
 	domainStr := strings.Join(app.Domains, " ")
 
@@ -442,7 +493,6 @@ func dokkuAppBuildpackAdd(appName string, buildpacks []string, client *goph.Clie
 	return nil
 }
 
-//
 func dokkuAppPortsAdd(appName string, ports []string, client *goph.Client) error {
 	for _, portRange := range ports {
 		portRange = strings.TrimSpace(portRange)
@@ -463,7 +513,21 @@ func dokkuAppNginxOptSet(appName string, property string, value string, client *
 	return res.err
 }
 
-//
+func dokkuAppLetsEncryptSet(appName string, active *bool, client *goph.Client) error {
+	if active == nil {
+		return nil
+	}
+
+	var res SshOutput
+	if *active {
+		res = run(client, fmt.Sprintf("letsencrypt:enable %s", appName))
+	} else {
+		res = run(client, fmt.Sprintf("letsencrypt:disable %s", appName))
+	}
+
+	return res.err
+}
+
 func dokkuAppUpdate(app *DokkuApp, d *schema.ResourceData, client *goph.Client) error {
 	if d.HasChange("name") {
 		old, _ := d.GetChange("name")
@@ -596,6 +660,12 @@ func dokkuAppUpdate(app *DokkuApp, d *schema.ResourceData, client *goph.Client) 
 	if d.HasChange("nginx_bind_address_ipv6") {
 		_, newBindAddr := d.GetChange("nginx_bind_address_ipv6")
 		dokkuAppNginxOptSet(appName, "bind-address-ipv6", newBindAddr.(string), client)
+	}
+
+	if d.HasChange("letsencrypt") {
+		_, newActiveRaw := d.GetChange("letsencrypt")
+		newActive := newActiveRaw.(bool)
+		dokkuAppLetsEncryptSet(appName, &newActive, client)
 	}
 
 	return nil
