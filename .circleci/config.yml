@@ -201,7 +201,8 @@ workflows:
                 - "0.32.4"
                 - "0.33.9"
                 - "0.34.9"
-                - "0.35.13"
+                - "0.35.20"
+                - "0.36.11"
           requires:
             - build
             - install-go-deps-vm

@@ -20,7 +20,7 @@
 
 This is a terraform provider for provisioning apps on [Dokku](https://dokku.com/) installations. Not all configuration options are currently supported.
 
-This provider is currently tested against Dokku >= v0.30 and <= 0.35, although can be forced to run against any version. [Read more](#Tested-dokku-versions).
+This provider is currently tested against Dokku >= v0.30 and <= 0.36, although can be forced to run against any version. [Read more](#Tested-dokku-versions).
 
 ## Key Features
 
