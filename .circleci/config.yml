@@ -1,7 +1,6 @@
 version: 2.1
 
 orbs:
-  docker: circleci/docker@2.0.1
   goreleaser: hubci/goreleaser@1.0.0
   go: circleci/go@2.2.3
   terraform: circleci/terraform@2.1.0
@@ -68,8 +67,6 @@ jobs:
           key: "v3"
       - terraform/install:
           terraform_version: "1.1.5"
-      # Was having problems with docker <20 and dokku >= 0.26.2
-      - docker/install-docker
       - run:
           name: Install gotestsum
           command: |
@@ -201,7 +198,8 @@ workflows:
                 - "0.32.4"
                 - "0.33.9"
                 - "0.34.9"
-                - "0.35.13"
+                - "0.35.20"
+                - "0.36.11"
           requires:
             - build
             - install-go-deps-vm
