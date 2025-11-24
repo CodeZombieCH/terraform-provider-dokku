@@ -68,8 +68,6 @@ jobs:
           key: "v3"
       - terraform/install:
           terraform_version: "1.1.5"
-      # Was having problems with docker <20 and dokku >= 0.26.2
-      # - docker/install-docker
       - run:
           name: Install gotestsum
           command: |
