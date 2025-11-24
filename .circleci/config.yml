@@ -19,7 +19,7 @@ executors:
       - image: cimg/go:<< pipeline.parameters.go-version >>
   vm:
     machine:
-      image: ubuntu-2004:current
+      image: ubuntu-2404:current
     environment:
       GOMODCACHE: /home/circleci/go/pkg/mod
 
